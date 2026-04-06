@@ -22,7 +22,7 @@ final class SpeechEngine {
         }
     }
 
-    init(locale: Locale = Locale(identifier: "zh-CN")) {
+    init(locale: Locale = Locale(identifier: "en-US")) {
         self.locale = locale
         self.speechRecognizer = SFSpeechRecognizer(locale: locale)
     }
