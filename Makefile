@@ -12,11 +12,14 @@ build:
 	mkdir -p $(APP_BUNDLE)/Contents/Resources
 	cp $(BUILD_DIR)/$(APP_NAME) $(APP_BUNDLE)/Contents/MacOS/
 	cp Info.plist $(APP_BUNDLE)/Contents/
-	codesign --force --sign - $(APP_BUNDLE)
+	codesign --force --deep --sign - $(APP_BUNDLE)
 	@echo "\n✅ Built $(APP_BUNDLE)"
 
-run: build
-	open $(APP_BUNDLE)
+run: install
+	@killall $(APP_NAME) 2>/dev/null; true
+	@sleep 1
+	/Applications/$(APP_BUNDLE)/Contents/MacOS/$(APP_NAME) &
+	@echo "✅ Running $(APP_NAME)"
 
 clean:
 	swift package clean
@@ -25,4 +28,5 @@ clean:
 install: build
 	rm -rf /Applications/$(APP_BUNDLE)
 	cp -r $(APP_BUNDLE) /Applications/
+	xattr -cr /Applications/$(APP_BUNDLE)
 	@echo "✅ Installed to /Applications/$(APP_BUNDLE)"
