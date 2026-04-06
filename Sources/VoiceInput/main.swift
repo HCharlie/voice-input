@@ -5,4 +5,6 @@ app.setActivationPolicy(.accessory)
 
 let delegate = AppDelegate()
 app.delegate = delegate
-app.run()
+withExtendedLifetime(delegate) {
+    app.run()
+}

@@ -18,7 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var settingsWindow = SettingsWindow()
     private var languageItems: [NSMenuItem] = []
     private var selectedLocaleCode: String {
-        get { UserDefaults.standard.string(forKey: "selectedLocaleCode") ?? "zh-CN" }
+        get { UserDefaults.standard.string(forKey: "selectedLocaleCode") ?? "en-US" }
         set { UserDefaults.standard.set(newValue, forKey: "selectedLocaleCode") }
     }
 
@@ -33,18 +33,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusBar()
         setupSpeechCallbacks()
 
-        SpeechEngine.requestPermissions { [weak self] granted, errorMsg in
-            if !granted, let msg = errorMsg {
-                self?.showAlert(title: "Permission Required", message: msg)
-            }
-        }
-
-        if !keyMonitor.start() {
-            showAccessibilityAlert()
-        }
-
         keyMonitor.onFnDown = { [weak self] in self?.fnDown() }
         keyMonitor.onFnUp = { [weak self] in self?.fnUp() }
+
+        requestAccessibilityAndStart()
+
+        // Request speech permissions after a delay to avoid interfering with status bar
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            SpeechEngine.requestPermissions { [weak self] granted, errorMsg in
+                if !granted, let msg = errorMsg {
+                    DispatchQueue.main.async {
+                        self?.showAlert(title: "Permission Required", message: msg)
+                    }
+                }
+            }
+        }
+    }
+
+    private var accessibilityTimer: Timer?
+
+    private func requestAccessibilityAndStart() {
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
+        if AXIsProcessTrustedWithOptions(options) {
+            _ = keyMonitor.start()
+            return
+        }
+
+        // Poll every 2 seconds until the user grants permission
+        accessibilityTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] timer in
+            guard let self else { timer.invalidate(); return }
+            if AXIsProcessTrusted() {
+                timer.invalidate()
+                self.accessibilityTimer = nil
+                _ = self.keyMonitor.start()
+            }
+        }
     }
 
     // MARK: - Key events

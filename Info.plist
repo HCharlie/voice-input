@@ -5,7 +5,7 @@
     <key>CFBundleName</key>
     <string>VoiceInput</string>
     <key>CFBundleIdentifier</key>
-    <string>com.yetone.VoiceInput</string>
+    <string>com.yetone.voiceinput2</string>
     <key>CFBundleVersion</key>
     <string>1.0</string>
     <key>CFBundleShortVersionString</key>
