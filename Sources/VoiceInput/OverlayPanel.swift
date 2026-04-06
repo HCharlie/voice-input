@@ -5,12 +5,13 @@ final class OverlayPanel: NSPanel {
     private let label = NSTextField(labelWithString: "")
     private let waveformView = WaveformView()
 
-    private let capsuleHeight: CGFloat = 56
+    private let minCapsuleHeight: CGFloat = 56
     private let hPad: CGFloat = 24
+    private let vPad: CGFloat = 16
     private let waveSize: CGFloat = 44
     private let gap: CGFloat = 14
     private let minWidth: CGFloat = 160
-    private let maxWidth: CGFloat = 560
+    private let maxWidth: CGFloat = 600
 
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
@@ -51,7 +52,7 @@ final class OverlayPanel: NSPanel {
         effect.material = .hudWindow
         effect.state = .active
         effect.wantsLayer = true
-        effect.layer?.cornerRadius = capsuleHeight / 2
+        effect.layer?.cornerRadius = 20
         effect.layer?.masksToBounds = true
         effect.appearance = NSAppearance(named: .darkAqua)
         shadowHost.addSubview(effect)
@@ -60,7 +61,7 @@ final class OverlayPanel: NSPanel {
         let border = NSView(frame: cv.bounds)
         border.autoresizingMask = [.width, .height]
         border.wantsLayer = true
-        border.layer?.cornerRadius = capsuleHeight / 2
+        border.layer?.cornerRadius = 20
         border.layer?.borderWidth = 0.5
         border.layer?.borderColor = NSColor.white.withAlphaComponent(0.1).cgColor
         effect.addSubview(border)
@@ -78,9 +79,11 @@ final class OverlayPanel: NSPanel {
 
         label.font = .systemFont(ofSize: 15, weight: .medium)
         label.textColor = NSColor.white.withAlphaComponent(0.92)
-        label.lineBreakMode = .byTruncatingTail
-        label.maximumNumberOfLines = 1
+        label.lineBreakMode = .byWordWrapping
+        label.maximumNumberOfLines = 0
+        label.preferredMaxLayoutWidth = maxWidth - hPad * 2 - waveSize - gap
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        label.setContentHuggingPriority(.defaultLow, for: .vertical)
         stack.addArrangedSubview(label)
 
         NSLayoutConstraint.activate([
@@ -98,13 +101,13 @@ final class OverlayPanel: NSPanel {
         label.stringValue = text
         waveformView.isAnimating = true
 
-        let w = idealWidth(for: text)
+        let size = idealSize(for: text)
         guard let screen = NSScreen.main else { return }
         let area = screen.visibleFrame
-        let x = area.midX - w / 2
+        let x = area.midX - size.width / 2
         let y = area.minY + 56
 
-        setFrame(NSRect(x: x, y: y - 14, width: w, height: capsuleHeight), display: true)
+        setFrame(NSRect(x: x, y: y - 14, width: size.width, height: size.height), display: true)
         alphaValue = 0
         orderFrontRegardless()
 
@@ -113,18 +116,19 @@ final class OverlayPanel: NSPanel {
             ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.175, 0.885, 0.32, 1.1)
             animator().alphaValue = 1
             animator().setFrame(
-                NSRect(x: x, y: y, width: w, height: capsuleHeight), display: true)
+                NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
         }
     }
 
     func updateText(_ text: String) {
         label.stringValue = text
 
-        let w = idealWidth(for: text)
+        let size = idealSize(for: text)
         guard let screen = NSScreen.main else { return }
         let area = screen.visibleFrame
-        let x = area.midX - w / 2
-        let newFrame = NSRect(x: x, y: frame.origin.y, width: w, height: capsuleHeight)
+        let x = area.midX - size.width / 2
+        let y = area.minY + 56
+        let newFrame = NSRect(x: x, y: y, width: size.width, height: size.height)
 
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.25
@@ -154,7 +158,7 @@ final class OverlayPanel: NSPanel {
                     x: frame.origin.x + frame.width * 0.02,
                     y: frame.origin.y - 8,
                     width: frame.width * 0.96,
-                    height: capsuleHeight),
+                    height: frame.height),
                 display: true)
         }, completionHandler: {
             self.orderOut(nil)
@@ -163,11 +167,23 @@ final class OverlayPanel: NSPanel {
 
     // MARK: - Sizing
 
-    private func idealWidth(for text: String) -> CGFloat {
+    private func idealSize(for text: String) -> (width: CGFloat, height: CGFloat) {
         let attrs: [NSAttributedString.Key: Any] = [.font: label.font!]
         let textW = ceil((text as NSString).size(withAttributes: attrs).width)
-        let total = hPad + waveSize + gap + textW + hPad
-        return min(max(total, minWidth), maxWidth)
+        let singleLineTotal = hPad + waveSize + gap + textW + hPad
+        let w = min(max(singleLineTotal, minWidth), maxWidth)
+
+        // Calculate wrapped text height
+        let availableTextWidth = w - hPad * 2 - waveSize - gap
+        let textRect = (text as NSString).boundingRect(
+            with: NSSize(width: availableTextWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: attrs
+        )
+        let textH = ceil(textRect.height)
+        let h = max(minCapsuleHeight, textH + vPad * 2)
+
+        return (w, h)
     }
 }
 
