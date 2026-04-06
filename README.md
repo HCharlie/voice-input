@@ -1,10 +1,6 @@
 # VoiceInput
 
-A macOS menu-bar application that converts speech to text in real time using Apple's built-in Speech Recognition framework. Press a hotkey, speak, and the transcribed text is injected directly into the currently focused text field.
-
-
-
-https://github.com/user-attachments/assets/3228f78a-f035-447d-98ef-8826798a122c
+A macOS menu-bar app for hands-free text input. Hold the **Fn** key, speak, and your words are transcribed in real time and typed directly into whatever text field is focused — any app, any text field. Powered entirely by Apple's on-device Speech Recognition framework, so nothing leaves your Mac.
 
 
 
