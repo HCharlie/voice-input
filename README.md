@@ -13,29 +13,51 @@ https://github.com/user-attachments/assets/3228f78a-f035-447d-98ef-8826798a122c
 - macOS 14.0 (Sonoma) or later
 - Xcode Command Line Tools (for `swift build`)
 
-## Build & Run
+## Installation
+
+1. Clone and install:
+
+```bash
+git clone https://github.com/HCharlie/voice-input.git
+cd voice-input
+make install
+```
+
+2. Launch:
+
+```bash
+/Applications/VoiceInput.app/Contents/MacOS/VoiceInput &
+```
+
+3. Grant permissions when prompted:
+   - **Accessibility** — System Settings → Privacy & Security → Accessibility → enable VoiceInput
+   - **Microphone** — prompted automatically on first recording
+   - **Speech Recognition** — prompted automatically on first recording
+
+4. Disable the emoji picker for the Fn key:
+   - System Settings → Keyboard → "Press 🌐 key to" → **Do Nothing**
+
+## Usage
+
+- Press **Fn** to start recording
+- Speak your text
+- Release **Fn** to stop — the transcribed text is typed into the focused text field
+
+You can change the recognition language from the menu bar icon (click the mic icon → Language).
+
+## Build Commands
 
 ```bash
 make build   # build the .app bundle
-make run     # build and launch
-make install # copy to /Applications
+make run     # build, install to /Applications, and launch
+make install # build and copy to /Applications
 make clean   # remove build artifacts
 ```
 
-## Source Code
+## Forked From
 
-The full source code lives at **<https://github.com/yetone/voice-input-src>**.
-
-> **Reproducibility guarantee:** the source repository contains every file needed to produce **exactly** this distributed artifact. You can clone it and run `make build` to obtain an identical `VoiceInput.app` bundle. The build process is recorded and publicly verifiable — see the asciinema session below.
-
-## Build Recording
-
-A complete, unedited terminal recording of the build from source is available here:
-
-[![asciicast](https://asciinema.org/a/cHD6XaaNvomCuysh.svg)](https://asciinema.org/a/cHD6XaaNvomCuysh)
-
-This recording demonstrates that the source code at <https://github.com/yetone/voice-input-src> **can and does** build this exact artifact without modification.
+This is a fork of [yetone/voice-input-dist](https://github.com/yetone/voice-input-dist). The original source code lives at [yetone/voice-input-src](https://github.com/yetone/voice-input-src).
 
 ## License
 
-See the source repository for license details.
+See the [source repository](https://github.com/yetone/voice-input-src) for license details.
