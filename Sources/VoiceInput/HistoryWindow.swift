@@ -18,7 +18,7 @@ final class HistoryWindow: NSPanel, NSTableViewDataSource, NSTableViewDelegate, 
     init() {
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 600, height: 500),
-            styleMask: [.titled, .closable, .resizable, .nonactivatingPanel],
+            styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -156,6 +156,21 @@ final class HistoryWindow: NSPanel, NSTableViewDataSource, NSTableViewDelegate, 
         statusLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
         statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         clearButton.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+
+        // Fix 2B: Recalculate row heights when the scroll view is resized
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(contentViewFrameChanged),
+            name: NSView.frameDidChangeNotification,
+            object: scrollView.contentView
+        )
+        scrollView.contentView.postsFrameChangedNotifications = true
+    }
+
+    // Fix 2B: Handler for scroll view resize
+    @objc private func contentViewFrameChanged() {
+        guard !filteredEntries.isEmpty else { return }
+        tableView.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: 0..<filteredEntries.count))
     }
 
     // MARK: - NSTableViewDataSource
@@ -167,6 +182,8 @@ final class HistoryWindow: NSPanel, NSTableViewDataSource, NSTableViewDelegate, 
     // MARK: - NSTableViewDelegate
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        // Fix 1: Guard against out-of-range row
+        guard row < filteredEntries.count else { return nil }
         let entry = filteredEntries[row]
         let id = NSUserInterfaceItemIdentifier("HistoryCell")
         let cell = tableView.makeView(withIdentifier: id, owner: nil) as? HistoryCellView
@@ -176,10 +193,13 @@ final class HistoryWindow: NSPanel, NSTableViewDataSource, NSTableViewDelegate, 
     }
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+        // Fix 1: Guard against out-of-range row
+        guard row < filteredEntries.count else { return 56 }
         let entry = filteredEntries[row]
-        // Estimate height: ~18pt per line, 16pt top+bottom padding
+        // Fix 2A: Fall back to a reasonable default when bounds.width is 0 during first layout pass
+        let width = tableView.bounds.width > 0 ? tableView.bounds.width : 540
+        let maxWidth = width - 32  // account for padding
         let font = NSFont.systemFont(ofSize: 13)
-        let maxWidth = tableView.bounds.width - 32  // account for padding
         let attrs: [NSAttributedString.Key: Any] = [.font: font]
         let rect = (entry.text as NSString).boundingRect(
             with: NSSize(width: max(maxWidth, 100), height: .greatestFiniteMagnitude),
@@ -209,13 +229,15 @@ final class HistoryWindow: NSPanel, NSTableViewDataSource, NSTableViewDelegate, 
         copyText(filteredEntries[row].text)
     }
 
+    // Fix 4: Capture textInjector and text directly instead of [weak self]
     @objc private func reinjectSelected() {
         let row = tableView.clickedRow
         guard row >= 0, row < filteredEntries.count else { return }
         let text = filteredEntries[row].text
+        let injector = textInjector
         orderOut(nil)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            self?.textInjector.inject(text)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            injector.inject(text)
             NSSound(named: .init("Pop"))?.play()
         }
     }
@@ -229,6 +251,7 @@ final class HistoryWindow: NSPanel, NSTableViewDataSource, NSTableViewDelegate, 
         applyFilter(searchField.stringValue)
     }
 
+    // Fix 6: Call reload() to also reset the search field after clearing
     @objc private func clearAll() {
         let alert = NSAlert()
         alert.messageText = "Clear All History"
@@ -238,8 +261,7 @@ final class HistoryWindow: NSPanel, NSTableViewDataSource, NSTableViewDelegate, 
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         TranscriptionStore.shared.clear()
-        allEntries = []
-        applyFilter(searchField.stringValue)
+        reload()
     }
 
     // MARK: - Helpers
@@ -314,16 +336,24 @@ private final class HistoryCellView: NSTableCellView {
         refinedIcon.isHidden = !entry.wasRefined
     }
 
+    // Fix 3: Cache DateFormatter instances as static properties to avoid repeated allocations
+    private static let todayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "h:mm a"
+        return f
+    }()
+
+    private static let pastFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d, h:mm a"
+        return f
+    }()
+
     private static func formatDate(_ date: Date) -> String {
-        let cal = Calendar.current
-        if cal.isDateInToday(date) {
-            let f = DateFormatter()
-            f.dateFormat = "h:mm a"
-            return "Today \(f.string(from: date))"
+        if Calendar.current.isDateInToday(date) {
+            return "Today \(todayFormatter.string(from: date))"
         } else {
-            let f = DateFormatter()
-            f.dateFormat = "MMM d, h:mm a"
-            return f.string(from: date)
+            return pastFormatter.string(from: date)
         }
     }
 }
