@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var enableMenuItem: NSMenuItem!
     private var llmMenuItem: NSMenuItem!
     private lazy var settingsWindow = SettingsWindow()
+    private lazy var historyWindow = HistoryWindow()
     private var languageItems: [NSMenuItem] = []
     private var selectedLocaleCode: String {
         get { UserDefaults.standard.string(forKey: "selectedLocaleCode") ?? "en-US" }
@@ -160,6 +161,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                                 self.textInjector.inject(finalText)
                                 NSSound(named: .init("Pop"))?.play()
+                                TranscriptionStore.shared.append(
+                                    TranscriptionEntry(id: UUID(), text: finalText, date: Date(), wasRefined: true)
+                                )
                             }
                         }
                     } else {
@@ -167,6 +171,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                             self.textInjector.inject(finalText)
                             NSSound(named: .init("Pop"))?.play()
+                            TranscriptionStore.shared.append(
+                                TranscriptionEntry(id: UUID(), text: finalText, date: Date(), wasRefined: false)
+                            )
                         }
                     }
                 case .failure(let error):
@@ -178,6 +185,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                             self.textInjector.inject(finalText)
                             NSSound(named: .init("Pop"))?.play()
+                            TranscriptionStore.shared.append(
+                                TranscriptionEntry(id: UUID(), text: finalText, date: Date(), wasRefined: false)
+                            )
                         }
                     }
                 }
@@ -188,6 +198,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                 self?.textInjector.inject(text)
                 NSSound(named: .init("Pop"))?.play()
+                TranscriptionStore.shared.append(
+                    TranscriptionEntry(id: UUID(), text: text, date: Date(), wasRefined: false)
+                )
             }
             lastPartialResult = ""
         }
@@ -249,6 +262,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
+        let historyItem = NSMenuItem(title: "History...", action: #selector(openHistory), keyEquivalent: "")
+        historyItem.target = self
+        menu.addItem(historyItem)
+
+        menu.addItem(.separator())
+
         let quitItem = NSMenuItem(title: "Quit VoiceInput", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
@@ -302,6 +321,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openLLMSettings() {
         settingsWindow.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func openHistory() {
+        historyWindow.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
