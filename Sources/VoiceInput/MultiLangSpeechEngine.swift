@@ -82,7 +82,7 @@ final class MultiLangSpeechEngine {
                     let rms = sqrtf(sum / Float(max(frameLength, 1)))
                     let dB = 20 * log10(max(rms, 1e-6))
                     let normalized = max(Float(0), min(Float(1), (dB + 50) / 40))
-                    DispatchQueue.main.async { self.onAudioLevel?(normalized) }
+                    DispatchQueue.main.async { [weak self] in self?.onAudioLevel?(normalized) }
                 }
             }
 
@@ -255,7 +255,7 @@ final class MultiLangSpeechEngine {
                     if let leading = self.candidates.max(by: {
                         $0.value.avgConfidence < $1.value.avgConfidence
                     }), !leading.value.text.isEmpty {
-                        DispatchQueue.main.async { self.onPartialResult?(leading.value.text) }
+                        DispatchQueue.main.async { [weak self] in self?.onPartialResult?(leading.value.text) }
                     }
                     // fall through to error handling
                 }
