@@ -98,8 +98,35 @@ final class MultiLangSpeechEngine {
             }
         }
     }
-    func stopRecording() {}   // implemented in Task 7
-    func cancel() {}          // implemented in Task 7
+    func stopRecording() {
+        // Tap removed FIRST — must happen before audioEngine.stop()
+        // to prevent in-flight audio callbacks from appending to mid-shutdown requests.
+        audioEngine.inputNode.removeTap(onBus: 0)
+        audioEngine.stop()
+
+        stateQueue.async { [weak self] in
+            guard let self, !self.winnerSelected else { return }
+            // Signal end-of-input to all recognizers
+            for request in self.requests.values {
+                request.endAudio()
+            }
+            // Safety-net timeout: if a task never fires isFinal, pick whatever we have
+            let item = DispatchWorkItem { [weak self] in
+                guard let self, !self.winnerSelected else { return }
+                self.selectWinner()
+            }
+            self.timeoutWorkItem = item
+            self.stateQueue.asyncAfter(deadline: .now() + 2.0, execute: item)
+        }
+    }
+
+    func cancel() {
+        // Tap removed FIRST (same ordering requirement as stopRecording)
+        audioEngine.inputNode.removeTap(onBus: 0)
+        if audioEngine.isRunning { audioEngine.stop() }
+        // Dispatch cleanup async — does NOT fire onFinalResult or onError
+        stateQueue.async { [weak self] in self?.cleanup() }
+    }
 
     // No-op stubs — AppDelegate sets these on SpeechEngine; MultiLangSpeechEngine ignores them
     // (language is auto-detected; locale setting and unavailability alerts are irrelevant)
