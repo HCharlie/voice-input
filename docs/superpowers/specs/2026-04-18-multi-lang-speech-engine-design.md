@@ -130,23 +130,25 @@ on the state queue:
   if winnerSelected → return
 
   if let result:
-    // Result takes priority — if both result and error are non-nil, process only result
     text = result.bestTranscription.formattedString
     avgConf = avgConfidence(of: result)
     candidates[locale] = CandidateResult(text: text, avgConfidence: avgConf)
 
     if result.isFinal:
+      // isFinal + any simultaneous error: result takes priority.
+      // return prevents error branch from also incrementing finalResultCount.
       finalResultCount += 1
       if finalResultCount == activeTaskCount:
         timeoutWorkItem?.cancel()
         selectWinner()
-      // else: wait for remaining tasks or timeout
+      return
     else:
-      // Partial — best-effort display; may transiently show wrong language (intentional)
+      // Non-final partial: update overlay, then fall through to error branch.
+      // A simultaneous non-216 error must still be processed.
       leading = candidates.max { $0.value.avgConfidence < $1.value.avgConfidence }
       if let leading, !leading.value.text.isEmpty:
         dispatch onPartialResult(leading.value.text) to main
-    return  // do not process error when result is present
+      // fall through to error handling
 
   // No result — process error only
   if let error:
