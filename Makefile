@@ -2,7 +2,7 @@ APP_NAME := VoiceInput
 APP_BUNDLE := $(APP_NAME).app
 BUILD_DIR := $(shell swift build -c release --show-bin-path 2>/dev/null || echo .build/release)
 
-.PHONY: build clean install run
+.PHONY: build clean install run tag
 
 build:
 	swift build -c release
@@ -24,6 +24,16 @@ run: install
 clean:
 	swift package clean
 	rm -rf $(APP_BUNDLE)
+
+tag: ## Bump version, commit, tag, and push — CI will build and publish the GitHub Release
+	@[ "$(VERSION)" ] || { echo "Usage: make tag VERSION=x.y.z"; exit 1; }
+	/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $(VERSION)" Info.plist
+	/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(VERSION)" Info.plist
+	git add Info.plist
+	git commit -m "chore: bump version to $(VERSION)"
+	git tag "v$(VERSION)"
+	git push origin HEAD "v$(VERSION)"
+	@echo "\n✅ Tagged v$(VERSION) — GitHub Actions will build and publish the release"
 
 install: build
 	rm -rf /Applications/$(APP_BUNDLE)
