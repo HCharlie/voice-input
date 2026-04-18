@@ -40,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var languageSwitchDismissTimer: Timer?
+    private var errorDismissTask: DispatchWorkItem?
     private var cycleMenuItems: [NSMenuItem] = []
 
     // MARK: - Lifecycle
@@ -94,10 +95,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Key events
 
     private func fnDown() {
-        // Cancel any pending language-switch overlay dismiss — the recording overlay
-        // will replace it via overlayPanel.show(text: "Listening...") below.
+        // Cancel any pending overlay dismiss timers — the recording overlay
+        // will replace whatever is currently shown via overlayPanel.show(text: "Listening...") below.
         languageSwitchDismissTimer?.invalidate()
         languageSwitchDismissTimer = nil
+        errorDismissTask?.cancel()
+        errorDismissTask = nil
 
         guard isEnabled, !isRecording else { return }
         LLMRefiner.shared.cancel()
@@ -174,13 +177,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupSpeechCallbacks() {
         speechEngine.onPartialResult = { [weak self] text in
-            guard let self else { return }
+            // Guard: ignore stale partial results delivered after recording stopped.
+            guard let self, self.isRecording else { return }
             self.lastPartialResult = text
             self.overlayPanel.updateText(text)
         }
 
         speechEngine.onFinalResult = { [weak self] text in
-            guard let self else { return }
+            // Guard: ignore stale final results from a cancelled recording (e.g. the
+            // brief first tap of a double-tap). isRecording is false after fnUp(), so
+            // the normal recording flow always passes this guard.
+            guard let self, !self.isRecording else { return }
             self.lastPartialResult = text
             self.finalResultTimer?.invalidate()
             self.finalResultTimer = nil
@@ -190,9 +197,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         speechEngine.onError = { [weak self] msg in
             guard let self else { return }
             self.overlayPanel.updateText("Error: \(msg)")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                self.overlayPanel.dismiss()
+            // Use a cancellable work item so fnDown() can cancel a pending dismiss
+            // that would otherwise wipe the new "Listening..." overlay.
+            self.errorDismissTask?.cancel()
+            let task = DispatchWorkItem { [weak self] in
+                self?.overlayPanel.dismiss()
+                self?.errorDismissTask = nil
             }
+            self.errorDismissTask = task
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: task)
         }
 
         speechEngine.onAudioLevel = { [weak self] level in

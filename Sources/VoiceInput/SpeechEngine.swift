@@ -74,16 +74,20 @@ final class SpeechEngine {
 
         recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
             guard let self else { return }
-            if let result {
-                let text = result.bestTranscription.formattedString
-                if result.isFinal {
-                    self.onFinalResult?(text)
-                } else {
-                    self.onPartialResult?(text)
+            // The Speech framework fires this callback on its own internal thread.
+            // Dispatch to main so all callbacks touch AppKit only from the main thread.
+            DispatchQueue.main.async {
+                if let result {
+                    let text = result.bestTranscription.formattedString
+                    if result.isFinal {
+                        self.onFinalResult?(text)
+                    } else {
+                        self.onPartialResult?(text)
+                    }
                 }
-            }
-            if let error, (error as NSError).code != 216 {
-                self.onError?(error.localizedDescription)
+                if let error, (error as NSError).code != 216 {
+                    self.onError?(error.localizedDescription)
+                }
             }
         }
 
