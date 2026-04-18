@@ -35,11 +35,29 @@ make install
 
 ## Usage
 
-- Press **Fn** to start recording
-- Speak your text
-- Release **Fn** to stop — the transcribed text is typed into the focused text field
+### Recording
 
-You can change the recognition language from the menu bar icon (click the mic icon → Language).
+- **Hold Fn** to start recording
+- Speak your text
+- **Release Fn** to stop — the transcribed text is typed into the focused text field
+
+### Language switching
+
+**Double-tap Fn** (two quick taps, each under 300ms) to cycle through your configured languages. A brief overlay confirms the switch.
+
+To configure which languages are in the cycle:
+
+1. Click the mic icon in the menu bar
+2. Go to **Language**
+3. In the **"Double-tap Fn cycles:"** section at the bottom, check the languages you want to cycle through
+
+The active language (used for recording) is shown with a checkmark in the top section of the Language menu. The cycle defaults to English (US) and 中文 (简体) on first launch.
+
+> **Note:** The language selector is a preference — the app always recognises English and Chinese simultaneously and picks the best match automatically. Switching language adjusts the UI and your saved preference.
+
+### LLM refinement (optional)
+
+Click the mic icon → **LLM Refinement → Settings** to configure an OpenAI-compatible API key. When enabled, transcriptions are polished by the LLM before being typed.
 
 ## Build Commands
 
