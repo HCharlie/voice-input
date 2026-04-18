@@ -1,6 +1,17 @@
 import AVFoundation
 import Speech
 
+/// Wraps `SFSpeechRecognizer` and `AVAudioEngine` for hold-to-record voice input.
+///
+/// **Threading contract:**
+/// All public methods must be called from the main thread.
+/// All callbacks (`onPartialResult`, `onFinalResult`, `onError`, `onAudioLevel`,
+/// `onLocaleUnavailable`) are invoked on the main thread.
+///
+/// Note: the two synchronous `onError` paths inside `startRecording()` (recognizer
+/// guard and audio-engine start failure) are exceptions that rely on callers always
+/// being on the main thread rather than dispatching explicitly. `isRestartingRecording`
+/// in `AppDelegate` prevents re-entrant calls through those paths.
 final class SpeechEngine {
     var onPartialResult: ((String) -> Void)?
     var onFinalResult: ((String) -> Void)?
@@ -49,9 +60,15 @@ final class SpeechEngine {
         }
     }
 
-    /// Ensure recognizers exist for all given locale codes and warm their ML pipelines.
+    /// Ensure recognizers exist for all given locale codes and attempt to warm them.
+    ///
     /// Call this whenever the set of cycle languages changes, and once after permissions
-    /// are granted at startup. All locales in the pool are kept warm simultaneously.
+    /// are granted at startup. Each available recognizer gets a recognition task that is
+    /// immediately cancelled — this is a best-effort hint to the framework to load ML
+    /// models eagerly. Apple does not document whether task creation alone is sufficient
+    /// to trigger model loading; the warm-up may have no effect on some macOS versions.
+    /// Recognizers that are unavailable at call time (e.g. mid-download) are skipped
+    /// with no retry; their first real use will still incur cold-start latency.
     func prepare(localeCodes: [String]) {
         for code in localeCodes {
             addRecognizer(for: Locale(identifier: code))

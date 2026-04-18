@@ -143,9 +143,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // in FIFO order. fnUp() always completes before fnDoubleTap() runs, so
         // finalResultTimer is already set by the time we cancel it here.
         //
-        // speechEngine is MultiLangSpeechEngine. cancel() is safe when idle:
-        // removeTap() is a no-op if no tap installed; audioEngine.stop() is guarded by
-        // isRunning check (MultiLangSpeechEngine.swift:124-130).
+        // cancel() is safe when idle: cleanup() guards audioEngine.stop() behind
+        // isRunning, and stopRecording() guards removeTap() behind isRunning too.
         finalResultTimer?.invalidate()
         finalResultTimer = nil
         speechEngine.cancel()
@@ -194,8 +193,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         speechEngine.onFinalResult = { [weak self] text in
             // Guard: ignore stale final results from a cancelled recording (e.g. the
-            // brief first tap of a double-tap). isRecording is false after fnUp(), so
-            // the normal recording flow always passes this guard.
+            // brief first tap of a double-tap).
+            //
+            // This is safe because fnUp() sets isRecording=false *before* calling
+            // stopRecording(). Since callbacks are dispatched to main via async, they
+            // always arrive after fnUp() completes — so any genuine final result from the
+            // current session sees isRecording=false and passes this guard correctly.
             guard let self, !self.isRecording else { return }
             self.lastPartialResult = text
             self.finalResultTimer?.invalidate()
@@ -418,6 +421,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         } else {
             keyMonitor.stop()
+            // Cancel every pending timer regardless of isRecording so no stale
+            // dismiss or transcription fires after the app is disabled.
+            finalResultTimer?.invalidate()
+            finalResultTimer = nil
+            errorDismissTask?.cancel()
+            errorDismissTask = nil
             if isRecording {
                 speechEngine.cancel()
                 overlayPanel.dismiss()
