@@ -40,6 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var languageSwitchDismissTimer: Timer?
+    private var errorDismissTask: DispatchWorkItem?
+    private var isRestartingRecording = false
     private var cycleMenuItems: [NSMenuItem] = []
 
     // MARK: - Lifecycle
@@ -62,10 +64,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Request speech permissions after a delay to avoid interfering with status bar
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             SpeechEngine.requestPermissions { [weak self] granted, errorMsg in
-                if !granted, let msg = errorMsg {
-                    DispatchQueue.main.async {
-                        self?.showAlert(title: "Permission Required", message: msg)
-                    }
+                guard let self else { return }
+                if granted {
+                    // Warm all cycle languages now that we have permission.
+                    // Each recognizer in the pool starts and immediately cancels a
+                    // recognition task, loading the locale's ML models into memory
+                    // so every language in the cycle is ready with no cold-start lag.
+                    self.speechEngine.prepare(localeCodes: self.cycleLocaleCodes)
+                } else if let msg = errorMsg {
+                    self.showAlert(title: "Permission Required", message: msg)
                 }
             }
         }
@@ -94,13 +101,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Key events
 
     private func fnDown() {
-        // Cancel any pending language-switch overlay dismiss — the recording overlay
-        // will replace it via overlayPanel.show(text: "Listening...") below.
+        // Cancel every pending timer that could dismiss the overlay or finalise a
+        // previous transcription — all of them are stale the moment a new recording starts.
         languageSwitchDismissTimer?.invalidate()
         languageSwitchDismissTimer = nil
+        errorDismissTask?.cancel()
+        errorDismissTask = nil
+        finalResultTimer?.invalidate()
+        finalResultTimer = nil
 
         guard isEnabled, !isRecording else { return }
         LLMRefiner.shared.cancel()
+        isRestartingRecording = false
         isRecording = true
         lastPartialResult = ""
 
@@ -131,9 +143,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // in FIFO order. fnUp() always completes before fnDoubleTap() runs, so
         // finalResultTimer is already set by the time we cancel it here.
         //
-        // speechEngine is MultiLangSpeechEngine. cancel() is safe when idle:
-        // removeTap() is a no-op if no tap installed; audioEngine.stop() is guarded by
-        // isRunning check (MultiLangSpeechEngine.swift:124-130).
+        // cancel() is safe when idle: cleanup() guards audioEngine.stop() behind
+        // isRunning, and stopRecording() guards removeTap() behind isRunning too.
         finalResultTimer?.invalidate()
         finalResultTimer = nil
         speechEngine.cancel()
@@ -174,13 +185,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupSpeechCallbacks() {
         speechEngine.onPartialResult = { [weak self] text in
-            guard let self else { return }
+            // Guard: ignore stale partial results delivered after recording stopped.
+            guard let self, self.isRecording else { return }
             self.lastPartialResult = text
             self.overlayPanel.updateText(text)
         }
 
         speechEngine.onFinalResult = { [weak self] text in
-            guard let self else { return }
+            // Guard: ignore stale final results from a cancelled recording (e.g. the
+            // brief first tap of a double-tap).
+            //
+            // This is safe because fnUp() sets isRecording=false *before* calling
+            // stopRecording(). Since callbacks are dispatched to main via async, they
+            // always arrive after fnUp() completes — so any genuine final result from the
+            // current session sees isRecording=false and passes this guard correctly.
+            guard let self, !self.isRecording else { return }
             self.lastPartialResult = text
             self.finalResultTimer?.invalidate()
             self.finalResultTimer = nil
@@ -189,9 +208,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         speechEngine.onError = { [weak self] msg in
             guard let self else { return }
-            self.overlayPanel.updateText("Error: \(msg)")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                self.overlayPanel.dismiss()
+            if self.isRecording {
+                // Error during active recording (e.g. silence timeout, end-of-utterance).
+                // Attempt a silent restart so the user can keep holding Fn.
+                //
+                // isRestartingRecording prevents re-entrancy: startRecording() can call
+                // onError? synchronously (on the same main-thread stack frame) when the
+                // recognizer is unavailable. The flag makes that inner call skip the
+                // restart and fall through without touching isRecording or the overlay,
+                // so the outer call can still clean up correctly.
+                if !self.isRestartingRecording {
+                    self.isRestartingRecording = true
+                    self.lastPartialResult = ""
+                    self.overlayPanel.updateText("Listening...")
+                    self.speechEngine.cancel()
+                    self.speechEngine.startRecording()
+                    self.isRestartingRecording = false
+                }
+                // Whether restart succeeded or failed, keep isRecording = true so
+                // fnUp() still fires stopRecording() when the user releases Fn.
+                // The overlay remains visible — we either restarted cleanly or
+                // startRecording() failed (audio engine issue), in which case fnUp()
+                // will handle the graceful teardown.
+            } else {
+                // Not recording — stale error from a cancelled task. Show briefly.
+                self.overlayPanel.updateText("Error: \(msg)")
+                self.errorDismissTask?.cancel()
+                let task = DispatchWorkItem { [weak self] in
+                    self?.overlayPanel.dismiss()
+                    self?.errorDismissTask = nil
+                }
+                self.errorDismissTask = task
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: task)
             }
         }
 
@@ -373,6 +421,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         } else {
             keyMonitor.stop()
+            // Cancel every pending timer regardless of isRecording so no stale
+            // dismiss or transcription fires after the app is disabled.
+            finalResultTimer?.invalidate()
+            finalResultTimer = nil
+            errorDismissTask?.cancel()
+            errorDismissTask = nil
             if isRecording {
                 speechEngine.cancel()
                 overlayPanel.dismiss()
@@ -416,6 +470,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             cycleLocaleCodes.insert(code, at: insertIndex)
         }
         updateCycleMenuItems()
+        // Ensure a recognizer is ready for any newly added language.
+        speechEngine.prepare(localeCodes: cycleLocaleCodes)
     }
 
     @objc private func changeLanguage(_ sender: NSMenuItem) {
