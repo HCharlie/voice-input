@@ -2,8 +2,6 @@
 
 A macOS menu-bar app for hands-free text input. Hold the **Fn** key, speak, and your words are transcribed in real time and typed directly into whatever text field is focused — any app, any text field. Powered entirely by Apple's on-device Speech Recognition framework, so nothing leaves your Mac.
 
-
-
 ## Requirements
 
 - macOS 14.0 (Sonoma) or later
@@ -43,17 +41,15 @@ make install
 
 ### Language switching
 
-**Double-tap Fn** (two quick taps, each under 300ms) to cycle through your configured languages. A brief overlay confirms the switch.
+**Double-tap Fn** (two quick taps, each under 300ms) to cycle through your configured languages. A brief overlay confirms the active language.
 
 To configure which languages are in the cycle:
 
 1. Click the mic icon in the menu bar
 2. Go to **Language**
-3. In the **"Double-tap Fn cycles:"** section at the bottom, check the languages you want to cycle through
+3. In the **"Double-tap Fn cycles:"** section at the bottom, check the languages you want to include
 
-The active language (used for recording) is shown with a checkmark in the top section of the Language menu. The cycle defaults to English (US) and 中文 (简体) on first launch.
-
-> **Note:** The language selector is a preference — the app always recognises English and Chinese simultaneously and picks the best match automatically. Switching language adjusts the UI and your saved preference.
+The active language is shown with a checkmark in the top section of the Language menu. The cycle defaults to English (US) and 中文 (简体) on first launch. All languages in the cycle are kept warm in the background, so switching is instant with no delay on the first recording.
 
 ### LLM refinement (optional)
 
