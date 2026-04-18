@@ -303,6 +303,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             languageItems.append(item)
             langMenu.addItem(item)
         }
+        langMenu.addItem(.separator())
+
+        let cycleHeader = NSMenuItem(title: "Double-tap Fn cycles:", action: nil, keyEquivalent: "")
+        cycleHeader.isEnabled = false
+        langMenu.addItem(cycleHeader)
+
+        for (name, code) in languages where !code.isEmpty {
+            let item = NSMenuItem(title: name, action: #selector(toggleCycle(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = code
+            item.state = cycleLocaleCodes.contains(code) ? .on : .off
+            cycleMenuItems.append(item)
+            langMenu.addItem(item)
+        }
+
         langItem.submenu = langMenu
         menu.addItem(langItem)
 
@@ -384,6 +399,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let code = item.representedObject as? String else { continue }
             item.state = cycleLocaleCodes.contains(code) ? .on : .off
         }
+    }
+
+    @objc private func toggleCycle(_ sender: NSMenuItem) {
+        guard let code = sender.representedObject as? String else { return }
+        if cycleLocaleCodes.contains(code) {
+            cycleLocaleCodes.removeAll { $0 == code }
+        } else {
+            // Insert preserving canonical order from the languages array.
+            let order = languages.compactMap { $0.code.isEmpty ? nil : $0.code }
+            let insertIndex = order.firstIndex(of: code).flatMap { idx in
+                cycleLocaleCodes.firstIndex { c in
+                    (order.firstIndex(of: c) ?? Int.max) > idx
+                }
+            } ?? cycleLocaleCodes.endIndex
+            cycleLocaleCodes.insert(code, at: insertIndex)
+        }
+        updateCycleMenuItems()
     }
 
     @objc private func changeLanguage(_ sender: NSMenuItem) {
