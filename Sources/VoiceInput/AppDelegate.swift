@@ -18,6 +18,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var settingsWindow = SettingsWindow()
     private lazy var historyWindow = HistoryWindow()
     private var languageItems: [NSMenuItem] = []
+    private let languages: [(name: String, code: String)] = [
+        (name: "System Default", code: ""),
+        (name: "English (US)",   code: "en-US"),
+        (name: "中文 (简体)",     code: "zh-CN"),
+        (name: "中文 (繁體)",     code: "zh-TW"),
+        (name: "日本語",          code: "ja-JP"),
+        (name: "한국어",          code: "ko-KR"),
+    ]
     private var selectedLocaleCode: String {
         get { UserDefaults.standard.string(forKey: "selectedLocaleCode") ?? "en-US" }
         set { UserDefaults.standard.set(newValue, forKey: "selectedLocaleCode") }
@@ -223,14 +231,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let langItem = NSMenuItem(title: "Language", action: nil, keyEquivalent: "")
         let langMenu = NSMenu()
-        let languages: [(String, String)] = [
-            ("System Default", ""),
-            ("English (US)", "en-US"),
-            ("中文 (简体)", "zh-CN"),
-            ("中文 (繁體)", "zh-TW"),
-            ("日本語", "ja-JP"),
-            ("한국어", "ko-KR"),
-        ]
         for (name, code) in languages {
             let item = NSMenuItem(title: name, action: #selector(changeLanguage(_:)), keyEquivalent: "")
             item.target = self
@@ -303,14 +303,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func changeLanguage(_ sender: NSMenuItem) {
-        guard let code = sender.representedObject as? String else { return }
+    private func setLanguage(code: String) {
         selectedLocaleCode = code
         speechEngine.locale = code.isEmpty ? .current : Locale(identifier: code)
-
         for item in languageItems {
             item.state = (item.representedObject as? String) == code ? .on : .off
         }
+    }
+
+    @objc private func changeLanguage(_ sender: NSMenuItem) {
+        guard let code = sender.representedObject as? String else { return }
+        setLanguage(code: code)
     }
 
     @objc private func toggleLLM() {
