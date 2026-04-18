@@ -41,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var languageSwitchDismissTimer: Timer?
     private var errorDismissTask: DispatchWorkItem?
+    private var isRestartingRecording = false
     private var cycleMenuItems: [NSMenuItem] = []
 
     // MARK: - Lifecycle
@@ -109,6 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         guard isEnabled, !isRecording else { return }
         LLMRefiner.shared.cancel()
+        isRestartingRecording = false
         isRecording = true
         lastPartialResult = ""
 
@@ -201,21 +203,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         speechEngine.onError = { [weak self] msg in
             guard let self else { return }
-            if self.isRecording && self.speechEngine.isRecognizerAvailable {
-                // Engine was killed mid-hold (typically a silence timeout from the
-                // Speech framework). The user is still holding Fn, so restart silently.
-                // Clear partial state and reset the overlay so the UI looks live again.
-                self.lastPartialResult = ""
-                self.overlayPanel.updateText("Listening...")
-                self.speechEngine.cancel()
-                self.speechEngine.startRecording()
-            } else {
-                // Either not recording (stale error) or recognizer is unavailable
-                // (persistent failure). Abort the recording if one was in progress.
-                if self.isRecording {
-                    self.isRecording = false
-                    self.updateStatusIcon(recording: false)
+            if self.isRecording {
+                // Error during active recording (e.g. silence timeout, end-of-utterance).
+                // Attempt a silent restart so the user can keep holding Fn.
+                //
+                // isRestartingRecording prevents re-entrancy: startRecording() can call
+                // onError? synchronously (on the same main-thread stack frame) when the
+                // recognizer is unavailable. The flag makes that inner call skip the
+                // restart and fall through without touching isRecording or the overlay,
+                // so the outer call can still clean up correctly.
+                if !self.isRestartingRecording {
+                    self.isRestartingRecording = true
+                    self.lastPartialResult = ""
+                    self.overlayPanel.updateText("Listening...")
+                    self.speechEngine.cancel()
+                    self.speechEngine.startRecording()
+                    self.isRestartingRecording = false
                 }
+                // Whether restart succeeded or failed, keep isRecording = true so
+                // fnUp() still fires stopRecording() when the user releases Fn.
+                // The overlay remains visible — we either restarted cleanly or
+                // startRecording() failed (audio engine issue), in which case fnUp()
+                // will handle the graceful teardown.
+            } else {
+                // Not recording — stale error from a cancelled task. Show briefly.
                 self.overlayPanel.updateText("Error: \(msg)")
                 self.errorDismissTask?.cancel()
                 let task = DispatchWorkItem { [weak self] in

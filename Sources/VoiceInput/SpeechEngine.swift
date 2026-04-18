@@ -156,8 +156,13 @@ final class SpeechEngine {
     }
 
     func stopRecording() {
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
+        // Guard isRunning: if a mid-hold error caused a failed restart, the audio
+        // engine may already be stopped and the tap already removed. Calling
+        // removeTap on a bus with no tap installed is undefined behaviour.
+        if audioEngine.isRunning {
+            audioEngine.stop()
+            audioEngine.inputNode.removeTap(onBus: 0)
+        }
         recognitionRequest?.endAudio()
     }
 
