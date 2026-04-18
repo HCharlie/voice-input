@@ -63,10 +63,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Request speech permissions after a delay to avoid interfering with status bar
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             SpeechEngine.requestPermissions { [weak self] granted, errorMsg in
-                if !granted, let msg = errorMsg {
-                    DispatchQueue.main.async {
-                        self?.showAlert(title: "Permission Required", message: msg)
-                    }
+                guard let self else { return }
+                if granted {
+                    // Warm all cycle languages now that we have permission.
+                    // Each recognizer in the pool starts and immediately cancels a
+                    // recognition task, loading the locale's ML models into memory
+                    // so every language in the cycle is ready with no cold-start lag.
+                    self.speechEngine.prepare(localeCodes: self.cycleLocaleCodes)
+                } else if let msg = errorMsg {
+                    self.showAlert(title: "Permission Required", message: msg)
                 }
             }
         }
@@ -415,9 +420,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for item in languageItems {
             item.state = (item.representedObject as? String) == code ? .on : .off
         }
-        // Warm up the new locale's recognition pipeline so the first recording
-        // after a language switch has no cold-start delay.
-        speechEngine.prewarm()
     }
 
     private func languageName(for code: String) -> String {
@@ -446,6 +448,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             cycleLocaleCodes.insert(code, at: insertIndex)
         }
         updateCycleMenuItems()
+        // Ensure a recognizer is ready for any newly added language.
+        speechEngine.prepare(localeCodes: cycleLocaleCodes)
     }
 
     @objc private func changeLanguage(_ sender: NSMenuItem) {

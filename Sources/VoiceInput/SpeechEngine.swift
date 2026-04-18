@@ -11,20 +11,56 @@ final class SpeechEngine {
     private let audioEngine = AVAudioEngine()
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
-    private var speechRecognizer: SFSpeechRecognizer?
+
+    // Pool of ready recognizers keyed by locale identifier.
+    // All languages in the cycle are kept warm simultaneously so switching
+    // between them is a zero-cost pointer swap with no cold-start latency.
+    private var recognizers: [String: SFSpeechRecognizer] = [:]
+    private var activeLocaleCode: String
 
     var locale: Locale {
-        didSet {
-            speechRecognizer = SFSpeechRecognizer(locale: locale)
-            if speechRecognizer == nil {
-                onLocaleUnavailable?("Speech recognition is not supported for \(locale.identifier). Please check that the language is downloaded in System Settings → General → Keyboard → Dictation.")
-            }
+        get { Locale(identifier: activeLocaleCode) }
+        set {
+            activeLocaleCode = newValue.identifier
+            addRecognizer(for: newValue)
         }
     }
 
+    var isRecognizerAvailable: Bool {
+        recognizers[activeLocaleCode]?.isAvailable ?? false
+    }
+
     init(locale: Locale = Locale(identifier: "en-US")) {
-        self.locale = locale
-        self.speechRecognizer = SFSpeechRecognizer(locale: locale)
+        self.activeLocaleCode = locale.identifier
+        if let rec = SFSpeechRecognizer(locale: locale) {
+            self.recognizers[locale.identifier] = rec
+        }
+    }
+
+    // MARK: - Pool management
+
+    private func addRecognizer(for locale: Locale) {
+        let code = locale.identifier
+        guard recognizers[code] == nil else { return }
+        if let rec = SFSpeechRecognizer(locale: locale) {
+            recognizers[code] = rec
+        } else {
+            onLocaleUnavailable?("Speech recognition is not supported for \(locale.identifier). Please check that the language is downloaded in System Settings → General → Keyboard → Dictation.")
+        }
+    }
+
+    /// Ensure recognizers exist for all given locale codes and warm their ML pipelines.
+    /// Call this whenever the set of cycle languages changes, and once after permissions
+    /// are granted at startup. All locales in the pool are kept warm simultaneously.
+    func prepare(localeCodes: [String]) {
+        for code in localeCodes {
+            addRecognizer(for: Locale(identifier: code))
+        }
+        for rec in recognizers.values where rec.isAvailable {
+            let req = SFSpeechAudioBufferRecognitionRequest()
+            let task = rec.recognitionTask(with: req) { _, _ in }
+            task.cancel()
+        }
     }
 
     // MARK: - Permissions
@@ -60,8 +96,8 @@ final class SpeechEngine {
         recognitionTask?.cancel()
         recognitionTask = nil
 
-        guard let recognizer = speechRecognizer, recognizer.isAvailable else {
-            onError?("Speech recognizer not available for \(locale.identifier)")
+        guard let recognizer = recognizers[activeLocaleCode], recognizer.isAvailable else {
+            onError?("Speech recognizer not available for \(activeLocaleCode)")
             return
         }
 
@@ -123,20 +159,6 @@ final class SpeechEngine {
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
         recognitionRequest?.endAudio()
-    }
-
-    var isRecognizerAvailable: Bool {
-        speechRecognizer?.isAvailable ?? false
-    }
-
-    /// Start and immediately cancel a recognition task to force the framework to load
-    /// its ML models into memory. Call after a locale change so the first real recording
-    /// in the new language has no cold-start latency.
-    func prewarm() {
-        guard let recognizer = speechRecognizer, recognizer.isAvailable else { return }
-        let request = SFSpeechAudioBufferRecognitionRequest()
-        let task = recognizer.recognitionTask(with: request) { _, _ in }
-        task.cancel()
     }
 
     func cancel() {
