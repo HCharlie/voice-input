@@ -125,6 +125,20 @@ final class SpeechEngine {
         recognitionRequest?.endAudio()
     }
 
+    var isRecognizerAvailable: Bool {
+        speechRecognizer?.isAvailable ?? false
+    }
+
+    /// Start and immediately cancel a recognition task to force the framework to load
+    /// its ML models into memory. Call after a locale change so the first real recording
+    /// in the new language has no cold-start latency.
+    func prewarm() {
+        guard let recognizer = speechRecognizer, recognizer.isAvailable else { return }
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        let task = recognizer.recognitionTask(with: request) { _, _ in }
+        task.cancel()
+    }
+
     func cancel() {
         recognitionTask?.cancel()
         cleanup()

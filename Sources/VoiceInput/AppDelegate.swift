@@ -196,16 +196,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         speechEngine.onError = { [weak self] msg in
             guard let self else { return }
-            self.overlayPanel.updateText("Error: \(msg)")
-            // Use a cancellable work item so fnDown() can cancel a pending dismiss
-            // that would otherwise wipe the new "Listening..." overlay.
-            self.errorDismissTask?.cancel()
-            let task = DispatchWorkItem { [weak self] in
-                self?.overlayPanel.dismiss()
-                self?.errorDismissTask = nil
+            if self.isRecording && self.speechEngine.isRecognizerAvailable {
+                // Engine was killed mid-hold (typically a silence timeout from the
+                // Speech framework). The user is still holding Fn, so restart silently.
+                // Clear partial state and reset the overlay so the UI looks live again.
+                self.lastPartialResult = ""
+                self.overlayPanel.updateText("Listening...")
+                self.speechEngine.cancel()
+                self.speechEngine.startRecording()
+            } else {
+                // Either not recording (stale error) or recognizer is unavailable
+                // (persistent failure). Abort the recording if one was in progress.
+                if self.isRecording {
+                    self.isRecording = false
+                    self.updateStatusIcon(recording: false)
+                }
+                self.overlayPanel.updateText("Error: \(msg)")
+                self.errorDismissTask?.cancel()
+                let task = DispatchWorkItem { [weak self] in
+                    self?.overlayPanel.dismiss()
+                    self?.errorDismissTask = nil
+                }
+                self.errorDismissTask = task
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: task)
             }
-            self.errorDismissTask = task
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: task)
         }
 
         speechEngine.onAudioLevel = { [weak self] level in
@@ -401,6 +415,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for item in languageItems {
             item.state = (item.representedObject as? String) == code ? .on : .off
         }
+        // Warm up the new locale's recognition pipeline so the first recording
+        // after a language switch has no cold-start delay.
+        speechEngine.prewarm()
     }
 
     private func languageName(for code: String) -> String {
