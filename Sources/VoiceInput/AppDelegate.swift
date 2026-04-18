@@ -101,12 +101,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Key events
 
     private func fnDown() {
-        // Cancel any pending overlay dismiss timers — the recording overlay
-        // will replace whatever is currently shown via overlayPanel.show(text: "Listening...") below.
+        // Cancel every pending timer that could dismiss the overlay or finalise a
+        // previous transcription — all of them are stale the moment a new recording starts.
         languageSwitchDismissTimer?.invalidate()
         languageSwitchDismissTimer = nil
         errorDismissTask?.cancel()
         errorDismissTask = nil
+        finalResultTimer?.invalidate()
+        finalResultTimer = nil
 
         guard isEnabled, !isRecording else { return }
         LLMRefiner.shared.cancel()
