@@ -31,6 +31,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         set { UserDefaults.standard.set(newValue, forKey: "selectedLocaleCode") }
     }
 
+    private var cycleLocaleCodes: [String] {
+        get {
+            (UserDefaults.standard.array(forKey: "cycleLocaleCodes") as? [String])
+                ?? ["en-US", "zh-CN"]
+        }
+        set { UserDefaults.standard.set(newValue, forKey: "cycleLocaleCodes") }
+    }
+
+    private var languageSwitchDismissTimer: Timer?
+    private var cycleMenuItems: [NSMenuItem] = []
+
     // MARK: - Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -44,6 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         keyMonitor.onFnDown = { [weak self] in self?.fnDown() }
         keyMonitor.onFnUp = { [weak self] in self?.fnUp() }
+        keyMonitor.onFnDoubleTap = { [weak self] in self?.fnDoubleTap() }
 
         requestAccessibilityAndStart()
 
@@ -82,6 +94,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Key events
 
     private func fnDown() {
+        // Cancel any pending language-switch overlay dismiss — the recording overlay
+        // will replace it via overlayPanel.show(text: "Listening...") below.
+        languageSwitchDismissTimer?.invalidate()
+        languageSwitchDismissTimer = nil
+
         guard isEnabled, !isRecording else { return }
         LLMRefiner.shared.cancel()
         isRecording = true
@@ -103,6 +120,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         finalResultTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
             self?.finishTranscription()
+        }
+    }
+
+    private func fnDoubleTap() {
+        guard isEnabled, !isRecording else { return }
+
+        // Ordering guarantee: the CGEvent tap runs on CFRunLoopGetMain(), so all three
+        // DispatchQueue.main.async dispatches (onFnDown, onFnUp, onFnDoubleTap) execute
+        // in FIFO order. fnUp() always completes before fnDoubleTap() runs, so
+        // finalResultTimer is already set by the time we cancel it here.
+        //
+        // speechEngine is MultiLangSpeechEngine. cancel() is safe when idle:
+        // removeTap() is a no-op if no tap installed; audioEngine.stop() is guarded by
+        // isRunning check (MultiLangSpeechEngine.swift:124-130).
+        finalResultTimer?.invalidate()
+        finalResultTimer = nil
+        speechEngine.cancel()
+        lastPartialResult = ""
+
+        guard !cycleLocaleCodes.isEmpty else { return }
+
+        let currentIndex = cycleLocaleCodes.firstIndex(of: selectedLocaleCode)
+        let nextIndex = currentIndex.map { ($0 + 1) % cycleLocaleCodes.count } ?? 0
+        let nextCode = cycleLocaleCodes[nextIndex]
+
+        setLanguage(code: nextCode)
+        updateCycleMenuItems()
+
+        // Race note: onFinalResult from the speech framework can be dispatched to the main
+        // queue between fnUp() and fnDoubleTap() (both FIFO on main queue). If onFinalResult
+        // fires before fnDoubleTap(), finishTranscription() runs first. In practice this is
+        // self-healing: the first tap is < 300ms of audio (user not yet speaking), so the
+        // transcription is empty and finishTranscription() bails at its `guard !text.isEmpty`
+        // check — no text is injected. The subsequent speechEngine.cancel() above then cleans up.
+        //
+        // The first tap of the double-tap will have shown "Listening..." in the overlay.
+        // overlayPanel.show(text:) re-runs the appear animation (alpha 0 → 1), which causes
+        // a brief fade-reset. This is intentional and acceptable — the user just double-tapped.
+        overlayPanel.show(text: "Language: \(languageName(for: nextCode))")
+        // Note: the user will hear two Tink sounds in quick succession — one from fnDown()
+        // on the first tap and one here. This is the intended feedback for a double-tap.
+        NSSound(named: .init("Tink"))?.play()
+
+        languageSwitchDismissTimer?.invalidate()
+        languageSwitchDismissTimer = Timer.scheduledTimer(withTimeInterval: 1.2, repeats: false) { [weak self] _ in
+            self?.overlayPanel.dismiss()
+            self?.languageSwitchDismissTimer = nil
         }
     }
 
@@ -308,6 +372,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         speechEngine.locale = code.isEmpty ? .current : Locale(identifier: code)
         for item in languageItems {
             item.state = (item.representedObject as? String) == code ? .on : .off
+        }
+    }
+
+    private func languageName(for code: String) -> String {
+        languages.first(where: { $0.code == code })?.name ?? code
+    }
+
+    private func updateCycleMenuItems() {
+        for item in cycleMenuItems {
+            guard let code = item.representedObject as? String else { continue }
+            item.state = cycleLocaleCodes.contains(code) ? .on : .off
         }
     }
 
