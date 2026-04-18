@@ -1,4 +1,5 @@
 import AVFoundation
+import NaturalLanguage
 import Speech
 
 final class MultiLangSpeechEngine {
@@ -191,7 +192,18 @@ final class MultiLangSpeechEngine {
         return segments.map(\.confidence).reduce(0, +) / Float(segments.count)
     }
 
+    /// Returns true if `NLLanguageRecognizer` identifies `text` as belonging to `locale`'s language.
+    /// Comparison uses only the first BCP-47 component (e.g. "en" for "en-US", "zh" for "zh-CN")
+    /// so that "zh-Hans" and "zh-Hant" both match the "zh-CN" locale.
+    private func detectsAsExpectedLanguage(_ text: String, for locale: Locale) -> Bool {
+        guard !text.isEmpty,
+              let detected = NLLanguageRecognizer.dominantLanguage(for: text) else { return false }
+        let expectedPrefix = locale.identifier.components(separatedBy: "-").first ?? locale.identifier
+        return detected.rawValue.hasPrefix(expectedPrefix)
+    }
+
     /// Picks the winning candidate and fires `onFinalResult`.
+    /// Primary criterion: `NLLanguageRecognizer` match. Fallback: `avgConfidence`.
     /// Precondition: called on stateQueue, `winnerSelected == false`.
     private func selectWinner() {
         winnerSelected = true
@@ -202,22 +214,31 @@ final class MultiLangSpeechEngine {
         for task in tasks.values { task.cancel() }
 
         let nonEmpty = candidates.filter { !$0.value.text.isEmpty }
-        let best = nonEmpty.max { $0.value.avgConfidence < $1.value.avgConfidence }
+
+        // Primary: candidates whose text is detected as the expected language
+        let languageMatches = nonEmpty.filter { detectsAsExpectedLanguage($0.value.text, for: $0.key) }
 
         let winner: String
-        if let best {
-            // Tie: multiple candidates at the same confidence → prefer defaultLocale
-            let tied = nonEmpty.filter { $0.value.avgConfidence == best.value.avgConfidence }
-            if tied.count > 1,
-               let def = candidates[defaultLocale],
-               !def.text.isEmpty {
-                winner = def.text
-            } else {
-                winner = best.value.text
-            }
+        if languageMatches.count == 1 {
+            // Exactly one language match — use it directly
+            winner = languageMatches.first!.value.text
         } else {
-            // All candidates empty — fallback to defaultLocale (AppDelegate guards empty strings)
-            winner = candidates[defaultLocale]?.text ?? ""
+            // 0 or 2+ language matches — fall back to avgConfidence with existing tie-breaking
+            let pool = languageMatches.isEmpty ? nonEmpty : languageMatches
+            let best = pool.max { $0.value.avgConfidence < $1.value.avgConfidence }
+            if let best {
+                let tied = pool.filter { $0.value.avgConfidence == best.value.avgConfidence }
+                if tied.count > 1,
+                   let def = candidates[defaultLocale],
+                   !def.text.isEmpty {
+                    winner = def.text
+                } else {
+                    winner = best.value.text
+                }
+            } else {
+                // All candidates empty — fallback to defaultLocale (AppDelegate guards empty strings)
+                winner = candidates[defaultLocale]?.text ?? ""
+            }
         }
 
         DispatchQueue.main.async { [weak self] in self?.onFinalResult?(winner) }
