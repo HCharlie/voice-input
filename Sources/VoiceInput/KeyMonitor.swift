@@ -3,10 +3,15 @@ import Cocoa
 final class KeyMonitor {
     var onFnDown: (() -> Void)?
     var onFnUp: (() -> Void)?
+    var onFnDoubleTap: (() -> Void)?
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var fnPressed = false
+
+    private var lastFnDownTime: Double = 0
+    private var lastFnUpTime: Double = 0
+    private var suppressNextFnUp: Bool = false
 
     /// Start monitoring. Returns false if accessibility permission is missing.
     func start() -> Bool {
@@ -45,6 +50,9 @@ final class KeyMonitor {
         }
         runLoopSource = nil
         eventTap = nil
+        lastFnDownTime = 0
+        lastFnUpTime = 0
+        suppressNextFnUp = false
     }
 
     // MARK: - Private
@@ -62,11 +70,33 @@ final class KeyMonitor {
         let fnDown = flags.contains(.maskSecondaryFn)
 
         if fnDown && !fnPressed {
-            fnPressed = true
-            DispatchQueue.main.async { [weak self] in self?.onFnDown?() }
+            let now = CACurrentMediaTime()
+            let gapBetweenTaps = now - lastFnDownTime
+            let prevTapDuration = lastFnUpTime - lastFnDownTime
+
+            if gapBetweenTaps < 0.40 && prevTapDuration > 0 && prevTapDuration < 0.30 {
+                // Second tap of a double-tap. Set fnPressed so the paired Fn-up
+                // enters the normal branch and records lastFnUpTime correctly.
+                fnPressed = true
+                suppressNextFnUp = true
+                // Do NOT update lastFnDownTime — prevents triple-tap re-triggering.
+                DispatchQueue.main.async { [weak self] in self?.onFnDoubleTap?() }
+            } else {
+                lastFnDownTime = now
+                fnPressed = true
+                DispatchQueue.main.async { [weak self] in self?.onFnDown?() }
+            }
             return nil // suppress Fn press (prevents emoji picker)
         } else if !fnDown && fnPressed {
+            let now = CACurrentMediaTime()
+            lastFnUpTime = now  // always record for future double-tap detection
             fnPressed = false
+
+            if suppressNextFnUp {
+                suppressNextFnUp = false
+                return nil  // suppress Fn-up for the second tap; do not fire onFnUp
+            }
+
             DispatchQueue.main.async { [weak self] in self?.onFnUp?() }
             return nil // suppress Fn release
         }
