@@ -49,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var errorDismissTask: DispatchWorkItem?
     private var isRestartingRecording = false
     private var cycleMenuItems: [NSMenuItem] = []
+    private var wasJustUpdated = false
 
     // MARK: - Lifecycle
 
@@ -58,6 +59,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             speechEngine.locale = Locale(identifier: savedCode)
         }
 
+        let currentVersion = UpdateChecker.shared.currentVersion
+        let lastVersion = UserDefaults.standard.string(forKey: "lastLaunchedVersion") ?? ""
+        wasJustUpdated = !lastVersion.isEmpty && lastVersion != currentVersion
+        UserDefaults.standard.set(currentVersion, forKey: "lastLaunchedVersion")
+
         setupStatusBar()
         setupSpeechCallbacks()
 
@@ -66,6 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyMonitor.onFnDoubleTap = { [weak self] in self?.fnDoubleTap() }
 
         requestAccessibilityAndStart()
+        UpdateChecker.shared.checkOnLaunch()
 
         // Request speech permissions after a delay to avoid interfering with status bar
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
@@ -349,6 +356,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
 
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+        let versionItem = NSMenuItem(title: "VoiceInput \(version)", action: nil, keyEquivalent: "")
+        versionItem.isEnabled = false
+        menu.addItem(versionItem)
+
+        let checkUpdatesItem = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
+        checkUpdatesItem.target = self
+        menu.addItem(checkUpdatesItem)
+
+        menu.addItem(.separator())
+
         enableMenuItem = NSMenuItem(title: "Enabled", action: #selector(toggleEnabled), keyEquivalent: "")
         enableMenuItem.target = self
         enableMenuItem.state = .on
@@ -499,6 +517,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setLanguage(code: code)
     }
 
+    @objc private func checkForUpdates() {
+        UpdateChecker.shared.checkUserInitiated()
+    }
+
     @objc private func toggleSendEnter() {
         sendEnterAfterDictation.toggle()
         sendEnterMenuItem.state = sendEnterAfterDictation ? .on : .off
@@ -530,13 +552,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showAccessibilityAlert() {
         let alert = NSAlert()
         alert.messageText = "Accessibility Permission Required"
+        let updateNote = wasJustUpdated
+            ? "\n\nVoiceInput was just updated — macOS requires re-granting Accessibility after each update. This is a one-time step per update."
+            : ""
         alert.informativeText = """
             VoiceInput needs Accessibility permission to monitor the Fn key.
 
             1. Open System Settings → Privacy & Security → Accessibility
             2. Add and enable VoiceInput
             3. Restart the app
-            """
+            """ + updateNote
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Open System Settings")
         alert.addButton(withTitle: "Quit")
