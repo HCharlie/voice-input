@@ -51,6 +51,10 @@ To configure which languages are in the cycle:
 
 The active language is shown with a checkmark in the top section of the Language menu. The cycle defaults to English (US) and 中文 (简体) on first launch. All languages in the cycle are kept warm in the background, so switching is instant with no delay on the first recording.
 
+### Send Enter after dictation
+
+Click the mic icon and check **Send Enter after dictation** to automatically press Return after each transcription is pasted. Useful in chat and messaging apps where you'd otherwise have to press Enter manually to send the message. Off by default.
+
 ### LLM refinement (optional)
 
 Click the mic icon → **LLM Refinement → Settings** to configure an OpenAI-compatible API key. When enabled, transcriptions are polished by the LLM before being typed.
