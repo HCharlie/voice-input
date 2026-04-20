@@ -54,6 +54,15 @@ final class TextInjector {
         }
     }
 
+    func injectReturn() {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        let returnKeyCode: CGKeyCode = 0x24
+        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: returnKeyCode, keyDown: true)
+        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: returnKeyCode, keyDown: false)
+        keyDown?.post(tap: .cgAnnotatedSessionEventTap)
+        keyUp?.post(tap: .cgAnnotatedSessionEventTap)
+    }
+
     // MARK: - Input Source Helpers
 
     private func isASCIICapable(_ source: TISInputSource) -> Bool {

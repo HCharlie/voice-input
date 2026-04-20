@@ -15,6 +15,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var enableMenuItem: NSMenuItem!
     private var llmMenuItem: NSMenuItem!
+    private var sendEnterMenuItem: NSMenuItem!
+
+    private var sendEnterAfterDictation: Bool {
+        get { UserDefaults.standard.bool(forKey: "sendEnterAfterDictation") }
+        set { UserDefaults.standard.set(newValue, forKey: "sendEnterAfterDictation") }
+    }
     private lazy var settingsWindow = SettingsWindow()
     private lazy var historyWindow = HistoryWindow()
     private var languageItems: [NSMenuItem] = []
@@ -279,7 +285,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                             self.overlayPanel.dismiss()
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                self.textInjector.inject(finalText)
+                                self.injectText(finalText)
                                 NSSound(named: .init("Pop"))?.play()
                                 TranscriptionStore.shared.append(
                                     TranscriptionEntry(id: UUID(), text: finalText, date: Date(), wasRefined: true)
@@ -289,7 +295,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     } else {
                         self.overlayPanel.dismiss()
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            self.textInjector.inject(finalText)
+                            self.injectText(finalText)
                             NSSound(named: .init("Pop"))?.play()
                             TranscriptionStore.shared.append(
                                 TranscriptionEntry(id: UUID(), text: finalText, date: Date(), wasRefined: false)
@@ -303,7 +309,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                         self.overlayPanel.dismiss()
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            self.textInjector.inject(finalText)
+                            self.injectText(finalText)
                             NSSound(named: .init("Pop"))?.play()
                             TranscriptionStore.shared.append(
                                 TranscriptionEntry(id: UUID(), text: finalText, date: Date(), wasRefined: false)
@@ -316,13 +322,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             overlayPanel.dismiss()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                self?.textInjector.inject(text)
+                self?.injectText(text)
                 NSSound(named: .init("Pop"))?.play()
                 TranscriptionStore.shared.append(
                     TranscriptionEntry(id: UUID(), text: text, date: Date(), wasRefined: false)
                 )
             }
             lastPartialResult = ""
+        }
+    }
+
+    private func injectText(_ text: String) {
+        textInjector.inject(text)
+        if sendEnterAfterDictation {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                self?.textInjector.injectReturn()
+            }
         }
     }
 
@@ -338,6 +353,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         enableMenuItem.target = self
         enableMenuItem.state = .on
         menu.addItem(enableMenuItem)
+
+        sendEnterMenuItem = NSMenuItem(title: "Send Enter after dictation", action: #selector(toggleSendEnter), keyEquivalent: "")
+        sendEnterMenuItem.target = self
+        sendEnterMenuItem.state = sendEnterAfterDictation ? .on : .off
+        menu.addItem(sendEnterMenuItem)
 
         menu.addItem(.separator())
 
@@ -477,6 +497,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func changeLanguage(_ sender: NSMenuItem) {
         guard let code = sender.representedObject as? String else { return }
         setLanguage(code: code)
+    }
+
+    @objc private func toggleSendEnter() {
+        sendEnterAfterDictation.toggle()
+        sendEnterMenuItem.state = sendEnterAfterDictation ? .on : .off
     }
 
     @objc private func toggleLLM() {
