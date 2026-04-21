@@ -4,7 +4,7 @@ import Speech
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let keyMonitor = KeyMonitor()
-    private let speechEngine = SpeechEngine()
+    private let speechEngine = MultiLangSpeechEngine()
     private let textInjector = TextInjector()
     private lazy var overlayPanel = OverlayPanel()
 
