@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: make build
+
+      - name: Package
+        run: ditto -c -k --keepParent VoiceInput.app "VoiceInput-${{ github.ref_name }}.zip"
+
+      - name: Compose release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ github.ref_name }}"
+
+          # Static installation instructions
+          cat > notes.md << 'EOF'
+          ## Installation
+
+          > **Note:** VoiceInput is not notarized. macOS will quarantine it on first
+          > download — run the command below once to clear the flag.
+
+          1. Download `VoiceInput-VERSION.zip` below and unzip it
+          2. Move `VoiceInput.app` to `/Applications/`
+          3. Clear the quarantine flag:
+             ```bash
+             xattr -cr /Applications/VoiceInput.app
+             ```
+          4. Launch:
+             ```bash
+             /Applications/VoiceInput.app/Contents/MacOS/VoiceInput &
+             ```
+          5. Grant **Accessibility** permission when prompted
+             (System Settings → Privacy & Security → Accessibility → enable VoiceInput)
+
+          ---
+
+          EOF
+
+          # Replace placeholder with actual version
+          sed -i '' "s/VERSION/${VERSION}/g" notes.md
+
+          # Append auto-generated changelog (commits since previous tag)
+          gh api repos/${{ github.repository }}/releases/generate-notes \
+            -f tag_name="${VERSION}" \
+            --jq '.body' >> notes.md || true
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            "VoiceInput-${{ github.ref_name }}.zip" \
+            --title "VoiceInput ${{ github.ref_name }}" \
+            --notes-file notes.md
